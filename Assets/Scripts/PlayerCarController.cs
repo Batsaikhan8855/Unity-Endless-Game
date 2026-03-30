@@ -7,16 +7,16 @@ public class PlayerCarController : MonoBehaviour
 {
     [Header("Lane тохиргоо")]
     public int totalLanes = 3;
-    public float laneWidth = 3.5f;
+    public float laneWidth = 2.5f;
     public float laneChangeSpeed = 10f;
 
     [Header("Хурдны тохиргоо")]
-    public float forwardSpeed = 15f;
-    public float speedIncreaseRate = 0.5f;
-    public float maxSpeed = 35f;
+    public float forwardSpeed = 12f;
+    public float speedIncreaseRate = 0.2f;
+    public float maxSpeed = 25f;
 
     [Header("Үсрэх тохиргоо")]
-    public float jumpForce = 7f;
+    public float jumpForce = 6f;
 
     [Header("Бөхийх тохиргоо")]
     public float crouchScaleY = 0.4f;
@@ -24,29 +24,16 @@ public class PlayerCarController : MonoBehaviour
     [Header("Swipe тохиргоо")]
     public float swipeThreshold = 50f;
 
-    // Lane
     private int currentLane = 1;
     private float targetX;
     private bool canChangeLane = true;
-
-    // Хурд
     private float currentSpeed;
-
-    // Үсрэх
     private bool isGrounded = true;
-
-    // Бөхийх
     private bool isCrouching = false;
     private Vector3 normalScale;
-
-    // Touch
     private Vector2 touchStartPos;
     private bool isTouching = false;
-
-    // Амьд эсэх
     private bool isAlive = true;
-
-    // Компонентүүд
     private Rigidbody rb;
     private GameManager gameManager;
 
@@ -54,29 +41,40 @@ public class PlayerCarController : MonoBehaviour
     {
         rb = GetComponent<Rigidbody>();
         gameManager = UObject.FindFirstObjectByType<GameManager>();
-
         normalScale = transform.localScale;
         currentLane = 1;
         targetX = GetLaneXPosition(currentLane);
         transform.position = new Vector3(targetX, transform.position.y, transform.position.z);
         currentSpeed = forwardSpeed;
+
+        // Rigidbody тохиргоо
+        if (rb != null)
+        {
+            rb.constraints = RigidbodyConstraints.FreezePositionZ |
+                           RigidbodyConstraints.FreezeRotationX |
+                           RigidbodyConstraints.FreezeRotationY |
+                           RigidbodyConstraints.FreezeRotationZ;
+            rb.linearDamping = 0f;
+            rb.angularDamping = 10f;
+        }
     }
 
     void Update()
     {
         if (!isAlive) return;
-
         currentSpeed = Mathf.Min(currentSpeed + speedIncreaseRate * Time.deltaTime, maxSpeed);
-
         HandleKeyboardInput();
         HandleTouchInput();
 
-        // Lane хөдөлгөөн
         float newX = Mathf.MoveTowards(transform.position.x, targetX, laneChangeSpeed * Time.deltaTime);
         transform.position = new Vector3(newX, transform.position.y, transform.position.z);
 
         if (Mathf.Abs(transform.position.x - targetX) < 0.05f)
             canChangeLane = true;
+
+        // Газарт буусан эсэхийг Y velocity-р шалгах
+        if (rb != null && Mathf.Abs(rb.linearVelocity.y) < 0.05f && transform.position.y <= 1.2f)
+            isGrounded = true;
     }
 
     void HandleKeyboardInput()
@@ -84,21 +82,17 @@ public class PlayerCarController : MonoBehaviour
         var kb = Keyboard.current;
         if (kb == null) return;
 
-        // Зүүн баруун
         if (kb.leftArrowKey.wasPressedThisFrame || kb.aKey.wasPressedThisFrame)
             MoveLeft();
         else if (kb.rightArrowKey.wasPressedThisFrame || kb.dKey.wasPressedThisFrame)
             MoveRight();
 
-        // PgUp = үсрэх
-        if (kb.pageUpKey.wasPressedThisFrame || kb.upArrowKey.wasPressedThisFrame)
+        if (kb.upArrowKey.wasPressedThisFrame || kb.pageUpKey.wasPressedThisFrame)
             Jump();
 
-        // PgDn = бөхийх / суух
-        if (kb.pageDownKey.wasPressedThisFrame || kb.downArrowKey.wasPressedThisFrame)
+        if (kb.downArrowKey.wasPressedThisFrame || kb.pageDownKey.wasPressedThisFrame)
             Crouch();
-
-        if (kb.pageDownKey.wasReleasedThisFrame || kb.downArrowKey.wasReleasedThisFrame)
+        if (kb.downArrowKey.wasReleasedThisFrame || kb.pageDownKey.wasReleasedThisFrame)
             StandUp();
     }
 
@@ -114,8 +108,7 @@ public class PlayerCarController : MonoBehaviour
             }
             else if (mouse.leftButton.wasReleasedThisFrame && isTouching)
             {
-                Vector2 delta = mouse.position.ReadValue() - touchStartPos;
-                ProcessSwipe(delta);
+                ProcessSwipe(mouse.position.ReadValue() - touchStartPos);
                 isTouching = false;
             }
         }
@@ -133,8 +126,7 @@ public class PlayerCarController : MonoBehaviour
                 }
                 else if (phase == UnityEngine.InputSystem.TouchPhase.Ended && isTouching)
                 {
-                    Vector2 delta = touch.position.ReadValue() - touchStartPos;
-                    ProcessSwipe(delta);
+                    ProcessSwipe(touch.position.ReadValue() - touchStartPos);
                     isTouching = false;
                 }
                 break;
@@ -145,7 +137,6 @@ public class PlayerCarController : MonoBehaviour
     void ProcessSwipe(Vector2 delta)
     {
         if (delta.magnitude < swipeThreshold) return;
-
         if (Mathf.Abs(delta.x) > Mathf.Abs(delta.y))
         {
             if (delta.x < 0) MoveLeft();
@@ -161,6 +152,7 @@ public class PlayerCarController : MonoBehaviour
     public void Jump()
     {
         if (!isGrounded || rb == null) return;
+        rb.linearVelocity = new Vector3(rb.linearVelocity.x, 0f, rb.linearVelocity.z);
         rb.AddForce(Vector3.up * jumpForce, ForceMode.Impulse);
         isGrounded = false;
     }
@@ -170,8 +162,6 @@ public class PlayerCarController : MonoBehaviour
         if (isCrouching) return;
         isCrouching = true;
         transform.localScale = new Vector3(normalScale.x, crouchScaleY, normalScale.z);
-        // Доошоо шилжих
-        transform.position = new Vector3(transform.position.x, crouchScaleY / 2f, transform.position.z);
     }
 
     public void StandUp()
@@ -179,7 +169,6 @@ public class PlayerCarController : MonoBehaviour
         if (!isCrouching) return;
         isCrouching = false;
         transform.localScale = normalScale;
-        transform.position = new Vector3(transform.position.x, 1f, transform.position.z);
     }
 
     public void MoveLeft()
@@ -205,8 +194,15 @@ public class PlayerCarController : MonoBehaviour
 
     void OnCollisionEnter(Collision col)
     {
-        if (!col.gameObject.CompareTag("Obstacle"))
-            isGrounded = true;
+        if (col.gameObject.CompareTag("Obstacle")) return;
+        foreach (ContactPoint contact in col.contacts)
+        {
+            if (contact.normal.y > 0.5f)
+            {
+                isGrounded = true;
+                break;
+            }
+        }
     }
 
     void OnTriggerEnter(Collider other)
